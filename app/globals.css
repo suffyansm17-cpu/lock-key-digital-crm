@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+*{box-sizing:border-box} body{margin:0;background:#f6f6f4;color:#171717}
+.card{@apply rounded-2xl border border-black/5 bg-white shadow-sm}
+.btn{@apply rounded-xl px-4 py-2 text-sm font-semibold transition}
+.btn-dark{@apply btn bg-black text-white hover:bg-neutral-800}
+.btn-light{@apply btn border border-black/10 bg-white hover:bg-neutral-50}
+.input{@apply w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 outline-none focus:border-black}
+.label{@apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-neutral-500}

@@ -1,0 +1,1 @@
+export default function Page(){return <div className="card p-8"><h1 className="text-2xl font-bold">Module ready</h1><p className="mt-2 text-neutral-500">This module will be connected to the database in the next build.</p></div>}

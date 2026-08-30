@@ -1,0 +1,1 @@
+import AuthGuard from "@/components/AuthGuard";import {ReactNode} from "react";export default function Layout({children}:{children:ReactNode}){return <AuthGuard>{children}</AuthGuard>}

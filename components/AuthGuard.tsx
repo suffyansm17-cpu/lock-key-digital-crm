@@ -1,0 +1,7 @@
+ "use client";
+import {ReactNode,useEffect,useState} from "react";import {usePathname,useRouter} from "next/navigation";import Sidebar from "./Sidebar";import {Role} from "@/lib/types";
+export default function AuthGuard({children}:{children:ReactNode}){const r=useRouter(),path=usePathname();const[u,setU]=useState<any>(null);
+useEffect(()=>{const x=localStorage.getItem("lkd_user");if(!x){r.replace("/");return}setU(JSON.parse(x))},[r]);
+if(!u)return <div className="grid min-h-screen place-items-center">Loading CRM...</div>;
+if(u.role==="HR"&&["/clients","/projects","/tasks","/documents"].some(x=>path.startsWith(x))){r.replace("/dashboard");return null}
+return <div className="flex min-h-screen"><Sidebar role={u.role}/><div className="min-w-0 flex-1"><header className="flex justify-between border-b border-black/5 bg-white px-5 py-4 md:px-8"><div><p className="text-xs uppercase tracking-wider text-neutral-400">Lock & Key Digital</p><p className="font-semibold">{u.role==="ADMIN"?"Admin Workspace":"HR Workspace"}</p></div><div className="text-right"><p className="text-sm font-semibold">{u.name}</p><p className="text-xs text-neutral-500">{u.role}</p></div></header><main className="p-5 md:p-8">{children}</main></div></div>}
