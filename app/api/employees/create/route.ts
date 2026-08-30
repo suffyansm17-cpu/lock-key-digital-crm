@@ -19,24 +19,26 @@ export async function POST(request: Request) {
       status,
     } = body;
 
-    if (!employee_id || !full_name || !email || !password) {
-      return NextResponse.json(
-        { error: "Employee ID, name, email and password are required." },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: "Password must be at least 8 characters." },
-        { status: 400 }
-      );
-    }
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+if (!emailRegex.test(email)) {
+  return NextResponse.json(
+    { error: "Invalid email format." },
+    { status: 400 }
+  );
+}
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+if (!passwordRegex.test(password)) {
+  return NextResponse.json(
+    { error: "Password must be at least 8 characters with uppercase, lowercase, number, and special character." },
+    { status: 400 }
+  );
+}
 
     const { data: authUser, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
-        password,
+       email_confirm: false,
+// Send verification email separately
         email_confirm: true,
         user_metadata: {
           employee_id,
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
 
     if (authError || !authUser.user) {
       return NextResponse.json(
-        { error: authError?.message || "Could not create login account." },
+{ error: "Could not create login account. Please try again or contact support." }      
         { status: 400 }
       );
     }
@@ -69,20 +71,32 @@ export async function POST(request: Request) {
       });
 
     if (employeeError) {
-      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+  const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+  if (deleteError) {
+    console.error("Failed to rollback auth user:", deleteError);
+    // Handle cleanup failure - maybe queue a background job
+  }
+  return NextResponse.json({ error: employeeError.message }, { status: 400 });
+}
 
       return NextResponse.json(
         { error: employeeError.message },
         { status: 400 }
       );
     }
-
+} catch (error) {
+  // Now you can log or use the error
+  console.error(error);
+}
     return NextResponse.json({
       success: true,
       employee_id,
       user_id: authUser.user.id,
     });
-  } catch {
+    } catch (error) {
+  // Now you can log or use the error
+  console.error(error);
+}
     return NextResponse.json(
       { error: "Something went wrong while creating the employee." },
       { status: 500 }
