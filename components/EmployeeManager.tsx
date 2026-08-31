@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Search, Plus, X, Loader2 } from "lucide-react";
+import { Search, Plus, X, Loader2, Eye, EyeOff } from "lucide-react";
 
 type Employee = {
   id: string;
@@ -29,6 +29,8 @@ const emptyForm = {
   employment_type: "Full-time",
   reporting_manager: "",
   status: "Active",
+  password: "",
+  confirmPassword: "",
 };
 
 function makeEmployeeId(fullName: string, sequence: number) {
@@ -52,6 +54,8 @@ export default function EmployeeManager() {
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState(emptyForm);
 
@@ -88,41 +92,73 @@ export default function EmployeeManager() {
   }, [employees, q]);
 
   async function addEmployee() {
+    setError("");
+
     if (!form.full_name || !form.email) {
       setError("Full name and email are required.");
       return;
     }
 
+    if (!form.password) {
+      setError("Please create a password for the employee.");
+      return;
+    }
+
+    if (form.password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     setSaving(true);
-    setError("");
 
     const sequence = employees.length + 1;
     const employee_id = makeEmployeeId(form.full_name, sequence);
 
-    const { error } = await supabase.from("employees").insert({
-      employee_id,
-      full_name: form.full_name,
-      email: form.email,
-      phone: form.phone || null,
-      department: form.department || null,
-      designation: form.designation || null,
-      joining_date: form.joining_date || null,
-      employment_type: form.employment_type,
-      reporting_manager: form.reporting_manager || null,
-      status: form.status,
-    });
+    try {
+      const response = await fetch("/api/employees/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          employee_id,
+          full_name: form.full_name,
+          email: form.email,
+          password: form.password,
+          phone: form.phone,
+          department: form.department,
+          designation: form.designation,
+          joining_date: form.joining_date,
+          employment_type: form.employment_type,
+          reporting_manager: form.reporting_manager,
+          status: form.status,
+        }),
+      });
 
-    if (error) {
-      setError(error.message);
-      setSaving(false);
-      return;
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || "Could not create employee.");
+        setSaving(false);
+        return;
+      }
+
+      setForm(emptyForm);
+      setOpen(false);
+      setShowPassword(false);
+      setShowConfirmPassword(false);
+
+      await loadEmployees();
+    } catch {
+      setError("Unable to connect to the employee creation service.");
     }
 
-    setForm(emptyForm);
-    setOpen(false);
     setSaving(false);
-
-    await loadEmployees();
   }
 
   return (
@@ -139,6 +175,7 @@ export default function EmployeeManager() {
           className="btn-dark flex items-center gap-2"
           onClick={() => {
             setError("");
+            setForm(emptyForm);
             setOpen(true);
           }}
         >
@@ -196,7 +233,6 @@ export default function EmployeeManager() {
                   >
                     <td className="px-5 py-4">
                       <b>{employee.full_name}</b>
-
                       <div className="text-xs text-neutral-500">
                         {employee.employee_id} · {employee.email}
                       </div>
@@ -250,7 +286,7 @@ export default function EmployeeManager() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
+              <div className="sm:col-span-2">
                 <label className="label">Full Name</label>
                 <input
                   className="input"
@@ -258,6 +294,7 @@ export default function EmployeeManager() {
                   onChange={(e) =>
                     setForm({ ...form, full_name: e.target.value })
                   }
+                  placeholder="Aarav Sharma"
                 />
               </div>
 
@@ -334,7 +371,6 @@ export default function EmployeeManager() {
 
               <div>
                 <label className="label">Employment Type</label>
-
                 <select
                   className="input"
                   value={form.employment_type}
@@ -354,7 +390,6 @@ export default function EmployeeManager() {
 
               <div>
                 <label className="label">Status</label>
-
                 <select
                   className="input"
                   value={form.status}
@@ -367,22 +402,102 @@ export default function EmployeeManager() {
                   <option>Resigned</option>
                 </select>
               </div>
+
+              <div className="sm:col-span-2 mt-2 rounded-xl border border-black/10 p-4">
+                <h3 className="mb-4 font-semibold">CRM Login</h3>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="label">Password</label>
+                    <div className="relative">
+                      <input
+                        className="input pr-10"
+                        type={showPassword ? "text" : "password"}
+                        value={form.password}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            password: e.target.value,
+                          })
+                        }
+                        placeholder="Minimum 8 characters"
+                      />
+
+                      <button
+                        type="button"
+                        className="absolute right-3 top-2.5"
+                        onClick={() =>
+                          setShowPassword(!showPassword)
+                        }
+                      >
+                        {showPassword ? (
+                          <EyeOff size={18} />
+                        ) : (
+                          <Eye size={18} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="label">Confirm Password</label>
+                    <div className="relative">
+                      <input
+                        className="input pr-10"
+                        type={
+                          showConfirmPassword ? "text" : "password"
+                        }
+                        value={form.confirmPassword}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            confirmPassword: e.target.value,
+                          })
+                        }
+                        placeholder="Re-enter password"
+                      />
+
+                      <button
+                        type="button"
+                        className="absolute right-3 top-2.5"
+                        onClick={() =>
+                          setShowConfirmPassword(
+                            !showConfirmPassword
+                          )
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff size={18} />
+                        ) : (
+                          <Eye size={18} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs text-neutral-500">
+                  The password is securely handled by Supabase
+                  authentication and is not stored in the employee table.
+                </p>
+              </div>
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
               <button
                 className="btn-light"
                 onClick={() => setOpen(false)}
+                disabled={saving}
               >
                 Cancel
               </button>
 
               <button
                 className="btn-dark"
-                disabled={saving}
                 onClick={addEmployee}
+                disabled={saving}
               >
-                {saving ? "Saving..." : "Save Employee"}
+                {saving ? "Creating Account..." : "Create Employee"}
               </button>
             </div>
           </div>
