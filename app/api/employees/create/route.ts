@@ -1,42 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-// TODO: replace with your actual auth/session check.
-// Example if you're using Supabase auth cookies:
-//
-// import { createServerClient } from "@supabase/ssr";
-// import { cookies } from "next/headers";
-//
-// async function getCallerRole() {
-//   const supabase = createServerClient(/* ... */);
-//   const { data: { user } } = await supabase.auth.getUser();
-//   if (!user) return null;
-//   return user.user_metadata?.role ?? null;
-// }
-async function assertIsAdmin(): Promise<boolean> {
-  // Replace this stub with a real session/role check before shipping.
-  // Returning true here means the route is currently UNPROTECTED.
-  return true;
-}
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_REGEX =
-  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-
 export async function POST(request: Request) {
-  let createdAuthUserId: string | null = null;
-
   try {
-    const isAdmin = await assertIsAdmin();
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 403 });
-    }
-
     const body = await request.json();
+
     const {
       employee_id,
       full_name,
-      email: rawEmail,
+      email,
       password,
       phone,
       department,
@@ -47,91 +19,54 @@ export async function POST(request: Request) {
       status,
     } = body;
 
-    const employeeId = typeof employee_id === "string" ? employee_id.trim() : "";
-    const fullName = typeof full_name === "string" ? full_name.trim() : "";
-    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
-
-    if (!employeeId || !fullName || !email || !password) {
-      return NextResponse.json(
-        { error: "Employee ID, name, email and password are required." },
-        { status: 400 }
-      );
-    }
-
-    if (!EMAIL_REGEX.test(email)) {
-      return NextResponse.json(
-        { error: "Invalid email format." },
-        { status: 400 }
-      );
-    }
-
-    if (typeof password !== "string" || !PASSWORD_REGEX.test(password)) {
+    if (!employee_id || !full_name || !email || !password) {
       return NextResponse.json(
         {
-          error:
-            "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character (@$!%*?&).",
+          error: "Employee ID, name, email and password are required.",
         },
         { status: 400 }
       );
     }
 
-    // Pre-check for duplicates so we don't create an auth user we then
-    // have to roll back for a totally predictable conflict.
-    const { data: existing, error: existingError } = await supabaseAdmin
-      .from("employees")
-      .select("id")
-      .or(`employee_id.eq.${employeeId},email.eq.${email}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (existingError) {
-      console.error("Employee duplicate-check failed:", existingError);
+    if (password.length < 8) {
       return NextResponse.json(
-        { error: "Could not validate employee uniqueness. Please try again." },
-        { status: 500 }
+        {
+          error: "Password must be at least 8 characters.",
+        },
+        { status: 400 }
       );
     }
 
-    if (existing) {
-      return NextResponse.json(
-        { error: "An employee with this ID or email already exists." },
-        { status: 409 }
-      );
-    }
-
-    // Create the auth user.
+    // Create Supabase login account
     const { data: authUser, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
         user_metadata: {
-          employee_id: employeeId,
-          full_name: fullName,
+          employee_id,
+          full_name,
           role: "employee",
         },
       });
 
-    if (authError || !authUser?.user) {
-      console.error("Auth user creation failed:", authError);
+    if (authError || !authUser.user) {
       return NextResponse.json(
         {
           error:
             authError?.message ||
-            "Could not create login account. Please try again or contact support.",
+            "Could not create employee login account.",
         },
         { status: 400 }
       );
     }
 
-    createdAuthUserId = authUser.user.id;
-
-    // Create the employee record.
+    // Create employee record
     const { error: employeeError } = await supabaseAdmin
       .from("employees")
       .insert({
-        employee_id: employeeId,
-        full_name: fullName,
+        employee_id,
+        full_name,
         email,
         phone: phone || null,
         department: department || null,
@@ -144,53 +79,137 @@ export async function POST(request: Request) {
       });
 
     if (employeeError) {
-      console.error(
-        `Employee insert failed for auth user ${authUser.user.id}, rolling back:`,
-        employeeError
-      );
+      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
 
-      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(
-        authUser.user.id
+      return NextResponse.json(
+        { error: employeeError.message },
+        { status: 400 }
       );
+    }
 
-      if (deleteError) {
-        // Auth user now exists with no matching employee row. Log loudly —
-        // this needs manual cleanup or a retry mechanism.
-        console.error(
-          `CRITICAL: failed to roll back orphaned auth user ${authUser.user.id} ` +
-            `after employee insert failure:`,
-          deleteError
-        );
+    // CRM URL
+    const crmUrl = new URL("/", request.url).origin;
+
+    // Send welcome email through Resend
+    const resendKey = process.env.RESEND_API_KEY;
+
+    if (!resendKey) {
+      return NextResponse.json(
+        {
+          error:
+            "Employee created, but RESEND_API_KEY is missing.",
+        },
+        { status: 500 }
+      );
+    }
+
+    const emailResponse = await fetch(
+      "https://api.resend.com/emails",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "Lock & Key Digital <onboarding@resend.dev>",
+          to: [email],
+          subject:
+            "Welcome to Lock & Key Digital — Your CRM Account",
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 650px; margin: auto; padding: 30px;">
+              
+              <h2 style="margin-bottom: 8px;">
+                Welcome to Lock & Key Digital!
+              </h2>
+
+              <p>Hello ${full_name},</p>
+
+              <p>
+                Your Lock & Key Digital CRM account has been
+                created successfully.
+              </p>
+
+              <div style="background:#f5f5f5; padding:20px; border-radius:10px; margin:25px 0;">
+                
+                <h3>CRM Login Credentials</h3>
+
+                <p>
+                  <strong>Employee ID:</strong><br>
+                  ${employee_id}
+                </p>
+
+                <p>
+                  <strong>Email:</strong><br>
+                  ${email}
+                </p>
+
+                <p>
+                  <strong>Password:</strong><br>
+                  ${password}
+                </p>
+
+              </div>
+
+              <a
+                href="${crmUrl}"
+                style="
+                  display:inline-block;
+                  background:#000;
+                  color:#fff;
+                  padding:12px 20px;
+                  border-radius:7px;
+                  text-decoration:none;
+                  font-weight:bold;
+                "
+              >
+                Open CRM
+              </a>
+
+              <p style="margin-top:30px;">
+                Please keep your login credentials secure.
+              </p>
+
+              <p>
+                Regards,<br>
+                <strong>Lock & Key Digital HR</strong>
+              </p>
+
+            </div>
+          `,
+        }),
       }
+    );
 
-      return NextResponse.json({ error: employeeError.message }, { status: 400 });
+    const emailResult = await emailResponse.json();
+
+    if (!emailResponse.ok) {
+      return NextResponse.json(
+        {
+          success: true,
+          employee_id,
+          warning:
+            "Employee was created successfully, but the welcome email could not be sent.",
+          emailError:
+            emailResult?.message || "Email sending failed.",
+        },
+        { status: 200 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      employee_id: employeeId,
+      employee_id,
       user_id: authUser.user.id,
+      emailSent: true,
     });
-  } catch (err) {
-    console.error("Unexpected error while creating employee:", err);
-
-    // Best-effort cleanup if we got as far as creating the auth user
-    // before the unexpected error hit.
-    if (createdAuthUserId) {
-      const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(
-        createdAuthUserId
-      );
-      if (deleteError) {
-        console.error(
-          `CRITICAL: failed to roll back orphaned auth user ${createdAuthUserId} ` +
-            `after unexpected error:`,
-          deleteError
-        );
-      }
-    }
+  } catch (error) {
+    console.error("Employee creation error:", error);
 
     return NextResponse.json(
-      { error: "Something went wrong while creating the employee." },
+      {
+        error: "Something went wrong while creating the employee.",
+      },
       { status: 500 }
     );
   }
