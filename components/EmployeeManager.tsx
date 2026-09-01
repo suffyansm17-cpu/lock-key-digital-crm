@@ -222,6 +222,7 @@ export default function EmployeeManager() {
                   <th className="px-5 py-3">Designation</th>
                   <th className="px-5 py-3">Joining</th>
                   <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Action</th>
                 </tr>
               </thead>
 
@@ -255,6 +256,41 @@ export default function EmployeeManager() {
                         {employee.status}
                       </span>
                     </td>
+                    <td className="px-5 py-4">
+  <button
+    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+    onClick={async () => {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete ${e.name}? This action cannot be undone.`
+      );
+
+      if (!confirmed) return;
+
+      const response = await fetch("/api/employees/delete", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: e.id,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        alert(result.error || "Failed to delete employee.");
+        return;
+      }
+
+      setEs((current) =>
+        current.filter((employee) => employee.id !== e.id)
+      );
+    }}
+  >
+    Delete
+  </button>
+</td>
                   </tr>
                 ))}
 
