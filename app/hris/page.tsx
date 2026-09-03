@@ -194,9 +194,38 @@ export default function HRISPage() {
   }
 
   async function uploadFile(
-    file: File,
-    category: string
-  ): Promise<string | null> {
+  file: File,
+  category: string
+): Promise<string> {
+  if (!userId) {
+    throw new Error("User is not logged in.");
+  }
+
+  if (!validateFile(file)) {
+    throw new Error(
+      "Invalid file. Only PDF, JPG, JPEG and PNG files under 10 MB are allowed."
+    );
+  }
+
+  const extension =
+    file.name.split(".").pop()?.toLowerCase() || "file";
+
+  const filePath = `${userId}/${category}-${Date.now()}.${extension}`;
+
+  const { error } = await supabase.storage
+    .from("hris-documents")
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+  if (error) {
+    console.error("File upload error:", error);
+    throw new Error(error.message);
+  }
+
+  return filePath;
+}
     if (!userId) return null;
 
     if (!validateFile(file)) {
