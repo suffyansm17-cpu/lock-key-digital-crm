@@ -59,13 +59,8 @@ export default function HRISPage() {
   const [existingAadhaarFile, setExistingAadhaarFile] = useState("");
 
   // Education
-  const [education1, setEducation1] = useState<Education>(
-    emptyEducation()
-  );
-
-  const [education2, setEducation2] = useState<Education>(
-    emptyEducation()
-  );
+  const [education1, setEducation1] = useState<Education>(emptyEducation());
+  const [education2, setEducation2] = useState<Education>(emptyEducation());
 
   useEffect(() => {
     loadHRIS();
@@ -194,42 +189,17 @@ export default function HRISPage() {
   }
 
   async function uploadFile(
-  file: File,
-  category: string
-): Promise<string> {
-  if (!userId) {
-    throw new Error("User is not logged in.");
-  }
-
-  if (!validateFile(file)) {
-    throw new Error(
-      "Invalid file. Only PDF, JPG, JPEG and PNG files under 10 MB are allowed."
-    );
-  }
-
-  const extension =
-    file.name.split(".").pop()?.toLowerCase() || "file";
-
-  const filePath = `${userId}/${category}-${Date.now()}.${extension}`;
-
-  const { error } = await supabase.storage
-    .from("hris-documents")
-    .upload(filePath, file, {
-      cacheControl: "3600",
-      upsert: false,
-    });
-
-  if (error) {
-    console.error("File upload error:", error);
-    throw new Error(error.message);
-  }
-
-  return filePath;
-}
-    if (!userId) return null;
+    file: File,
+    category: string
+  ): Promise<string> {
+    if (!userId) {
+      throw new Error("User is not logged in.");
+    }
 
     if (!validateFile(file)) {
-      return null;
+      throw new Error(
+        "Invalid file. Only PDF, JPG, JPEG and PNG files under 10 MB are allowed."
+      );
     }
 
     const extension =
@@ -685,7 +655,6 @@ export default function HRISPage() {
   );
 }
 
-
 /* =========================================================
    INPUT COMPONENT
 ========================================================= */
@@ -722,7 +691,6 @@ function Input({
   );
 }
 
-
 /* =========================================================
    TEXT AREA
 ========================================================= */
@@ -751,7 +719,6 @@ function TextArea({
     </div>
   );
 }
-
 
 /* =========================================================
    FILE INPUT
@@ -802,7 +769,6 @@ function FileInput({
   );
 }
 
-
 /* =========================================================
    EDUCATION CARD
 ========================================================= */
@@ -821,13 +787,11 @@ function EducationCard({
 }) {
   return (
     <div className="rounded-xl border border-gray-200 p-5">
-
       <h3 className="mb-5 text-lg font-semibold">
         {title}
       </h3>
 
       <div className="grid gap-5 md:grid-cols-2">
-
         <Input
           label="Degree / Qualification"
           value={education.degree}
@@ -869,7 +833,6 @@ function EducationCard({
             update("file", file)
           }
         />
-
       </div>
     </div>
   );
