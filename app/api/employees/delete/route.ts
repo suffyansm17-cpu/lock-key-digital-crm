@@ -12,7 +12,7 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // First get the employee's Auth user ID
+    // Find employee first
     const { data: employee, error: findError } = await supabaseAdmin
       .from("employees")
       .select("id, employee_id, email, auth_user_id")
@@ -35,7 +35,53 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Delete employee record
+    let authUserId = employee.auth_user_id;
+
+    // If auth_user_id is missing, try to find the Auth account by email.
+    if (!authUserId && employee.email) {
+      const { data: usersData, error: usersError } =
+        await supabaseAdmin.auth.admin.listUsers({
+          page: 1,
+          perPage: 1000,
+        });
+
+      if (!usersError) {
+        const matchingUser = usersData.users.find(
+          (user) =>
+            user.email?.toLowerCase() ===
+            employee.email.toLowerCase()
+        );
+
+        if (matchingUser) {
+          authUserId = matchingUser.id;
+        }
+      }
+    }
+
+    // Delete the Supabase Auth account FIRST.
+    // This ensures the email becomes available again.
+    if (authUserId) {
+      const { error: authDeleteError } =
+        await supabaseAdmin.auth.admin.deleteUser(authUserId);
+
+      if (authDeleteError) {
+        console.error(
+          "Failed to delete Supabase Auth user:",
+          authDeleteError
+        );
+
+        return NextResponse.json(
+          {
+            error:
+              "Could not delete the employee login account. The employee was NOT deleted.",
+            details: authDeleteError.message,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Now delete the employee record.
     const { error: employeeDeleteError } = await supabaseAdmin
       .from("employees")
       .delete()
@@ -48,39 +94,18 @@ export async function DELETE(request: Request) {
       );
 
       return NextResponse.json(
-        { error: employeeDeleteError.message },
-        { status: 400 }
+        {
+          error:
+            "Login account was deleted, but employee record could not be deleted.",
+        },
+        { status: 500 }
       );
-    }
-
-    // Delete Supabase Auth account
-    if (employee.auth_user_id) {
-      const { error: authDeleteError } =
-        await supabaseAdmin.auth.admin.deleteUser(
-          employee.auth_user_id
-        );
-
-      if (authDeleteError) {
-        console.error(
-          "Employee database deleted, but Auth account deletion failed:",
-          authDeleteError
-        );
-
-        return NextResponse.json(
-          {
-            success: true,
-            warning:
-              "Employee was deleted, but the login account could not be deleted. Please try deleting the employee again.",
-          },
-          { status: 200 }
-        );
-      }
     }
 
     return NextResponse.json({
       success: true,
       message:
-        "Employee, login account and HRIS access deleted successfully.",
+        "Employee, login account and HRIS data deleted successfully.",
     });
   } catch (error) {
     console.error("Delete employee error:", error);
